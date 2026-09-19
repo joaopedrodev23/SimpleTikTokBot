@@ -128,3 +128,4 @@ SimpleTikTokBot/
 ## 📜 Licença
 
 Distribuído sob a licença **MIT**. Consulte o arquivo [LICENSE](LICENSE) para obter mais informações.
+

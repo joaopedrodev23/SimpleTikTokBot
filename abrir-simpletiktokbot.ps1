@@ -43,3 +43,4 @@ try {
     Read-Host "Pressione Enter para continuar..."
     exit 1
 }
+

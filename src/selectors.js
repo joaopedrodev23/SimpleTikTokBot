@@ -22,21 +22,27 @@ module.exports = {
   // Seletores da página de perfil do TikTok (@usuario)
   profile: {
     followersButton: [
+      'button[data-e2e="followers"]',
       'strong[data-e2e="followers-count"]',
-      'span[data-e2e="followers-count"]',
+      'span[data-e2e="followers"]',
       'a[href*="/followers"]',
       'div[data-e2e="followers"]'
     ],
     followersModal: [
-      'div[data-e2e="user-followers-list"]',
+      'div[data-e2e="follow-info-popup"]',
       'div[role="dialog"]',
       'div[class*="DivUserListContainer"]'
+    ],
+    userListContainer: [
+      'div[class*="DivUserListContainer"]',
+      'div[role="dialog"] div[class*="UserList"]'
     ],
     userLinksInModal: [
       'a[data-e2e="user-card-avatar"]',
       'a[data-e2e="search-card-user-link"]',
+      'div[data-e2e="follow-info-popup"] a[href*="/@"]',
       'div[role="dialog"] a[href*="/@"]',
-      'div[data-e2e="user-followers-list"] a[href*="/@"]'
+      'div[class*="DivUserListContainer"] a[href*="/@"]'
     ],
     videos: [
       'div[data-e2e="user-post-item"] a',
@@ -56,6 +62,7 @@ module.exports = {
       'seguir',
       'follow',
       'seguir de volta',
+      'siga de volta',
       'follow back'
     ],
     // Textos que confirmam que já está seguindo
@@ -75,6 +82,7 @@ module.exports = {
       'button[aria-label*="Curtir"]'
     ],
     closeModal: [
+      'div[data-e2e="follow-popup-close"]',
       'button[data-e2e="modal-close-icon"]',
       'div[role="dialog"] button[aria-label*="Fechar"]',
       'div[role="dialog"] button[aria-label*="Close"]',

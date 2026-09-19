@@ -50,3 +50,4 @@ $jsonContent = $cookieObject | ConvertTo-Json -Depth 5
 
 Write-Host "`n✅ Cookies salvos com sucesso em: $CookiesFile" -ForegroundColor Green
 Write-Host "Agora você já pode abrir o SimpleTikTokBot com sua conta autenticada!`n" -ForegroundColor Cyan
+

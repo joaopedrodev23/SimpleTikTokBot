@@ -89,3 +89,4 @@ module.exports = {
   initBrowser,
   findSystemBrowser
 };
+

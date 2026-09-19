@@ -93,6 +93,15 @@ async function handleFollowFlow() {
     }
   } else {
     console.log(`Alvos carregados de targets.txt: ${targets.map(t => '@' + t).join(', ')}`);
+    const custom = await askQuestion('Deseja usar estes alvos de targets.txt? (S/N ou digite outro @alvo): ');
+    if (custom && custom.toLowerCase() !== 's' && custom.toLowerCase() !== 'sim') {
+      if (custom.toLowerCase() === 'n' || custom.toLowerCase() === 'nao') {
+        const newTarget = await askQuestion('Digite o novo @alvo: ');
+        if (newTarget) targets = [newTarget.replace(/^@/, '')];
+      } else {
+        targets = [custom.replace(/^@/, '')];
+      }
+    }
   }
 
   console.log(`\nConfigurações para esta sessão:`);
@@ -113,18 +122,18 @@ async function handleFollowFlow() {
     const logged = await ensureLogin(page);
     if (!logged) {
       log.error('Não foi possível autenticar no TikTok.');
-      await askQuestion('\nPressione Enter para voltar...');
-      await browser.close();
+      await askQuestion('\nPressione Enter para fechar o navegador e voltar...');
+      await browser.close().catch(() => {});
       return;
     }
 
-    await runFollowTargets(page, targets, config);
+    await runFollowTargets(page, targets, config, browser);
   } catch (err) {
     log.error(`Erro durante execução: ${err.message}`);
   } finally {
-    console.log('\nSessão finalizada. Fechando navegador...');
+    console.log('\nSessão finalizada!');
+    await askQuestion('Pressione Enter para fechar o navegador e voltar ao menu principal...');
     await browser.close().catch(() => {});
-    await askQuestion('\nPressione Enter para voltar ao menu principal...');
   }
 }
 
@@ -150,8 +159,8 @@ async function handleUnfollowFlow() {
     const logged = await ensureLogin(page);
     if (!logged) {
       log.error('Não foi possível autenticar no TikTok.');
-      await askQuestion('\nPressione Enter para voltar...');
-      await browser.close();
+      await askQuestion('\nPressione Enter para fechar o navegador e voltar...');
+      await browser.close().catch(() => {});
       return;
     }
 
@@ -159,9 +168,9 @@ async function handleUnfollowFlow() {
   } catch (err) {
     log.error(`Erro durante limpeza: ${err.message}`);
   } finally {
-    console.log('\nLimpeza concluída. Fechando navegador...');
+    console.log('\nLimpeza concluída!');
+    await askQuestion('Pressione Enter para fechar o navegador e voltar ao menu principal...');
     await browser.close().catch(() => {});
-    await askQuestion('\nPressione Enter para voltar ao menu principal...');
   }
 }
 

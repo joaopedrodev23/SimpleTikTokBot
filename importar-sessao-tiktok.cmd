@@ -7,3 +7,4 @@ cd /d "%SCRIPT_DIR%"
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%importar-sessao-tiktok.ps1"
 pause
+

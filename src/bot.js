@@ -52,9 +52,9 @@ async function checkCaptcha(page) {
 }
 
 /**
- * Coleta lista de seguidores a partir de um perfil de referência
+ * Abre o modal de seguidores de um perfil no TikTok
  */
-async function getFollowersFromTarget(page, targetUsername, countLimit = 30) {
+async function openFollowersModal(page, targetUsername) {
   const cleanTarget = targetUsername.toLowerCase().replace(/^@/, '');
   log.info(`Acessando perfil de referência: @${cleanTarget}`);
 
@@ -62,101 +62,136 @@ async function getFollowersFromTarget(page, targetUsername, countLimit = 30) {
   await sleep(3000);
   await checkCaptcha(page);
 
-  // Clica no botão de seguidores para abrir o modal
-  let openedModal = false;
-  for (const sel of selectors.profile.followersButton) {
-    try {
-      const btn = await page.$(sel);
-      if (btn) {
-        await btn.click();
-        openedModal = true;
-        break;
-      }
-    } catch (e) {}
-  }
-
-  if (!openedModal) {
-    log.warn(`Não foi possível abrir lista de seguidores de @${cleanTarget}. O perfil pode ser privado.`);
-    return [];
-  }
-
-  await sleep(3000);
-  await checkCaptcha(page);
-
-  // Aguarda modal aparecer
-  let modalFound = false;
-  for (const sel of selectors.profile.followersModal) {
-    const modal = await page.$(sel);
-    if (modal) {
-      modalFound = true;
-      break;
+  // Tenta abrir o modal com clique resiliente em JavaScript
+  const clicked = await page.evaluate(() => {
+    const el = document.querySelector('strong[data-e2e="followers-count"]') ||
+               document.querySelector('button[data-e2e="followers"]') ||
+               document.querySelector('span[data-e2e="followers"]');
+    if (el) {
+      if (el.parentElement) el.parentElement.click();
+      el.click();
+      return true;
     }
+    return false;
+  });
+
+  if (!clicked) {
+    log.warn(`Elemento de seguidores não encontrado para @${cleanTarget}.`);
+    return false;
   }
 
-  const collectedUsers = new Set();
-  let scrollAttempts = 0;
-  const maxScrollAttempts = 25;
-
-  log.info('Buscando contas ativas na lista de seguidores...');
-
-  while (collectedUsers.size < countLimit && scrollAttempts < maxScrollAttempts) {
-    // Extrai links de usuários visíveis no modal
-    const userLinks = await page.evaluate((modalSelectors) => {
-      const found = [];
-      const dialog = document.querySelector('div[role="dialog"]') || document.querySelector('div[data-e2e="user-followers-list"]');
-      if (!dialog) return found;
-
-      const links = dialog.querySelectorAll('a[href*="/@"]');
-      for (const a of links) {
-        const match = a.getAttribute('href').match(/@([a-zA-Z0-9._-]+)/);
-        if (match && match[1]) {
-          found.push(match[1].toLowerCase());
-        }
-      }
-      return found;
-    }, selectors.profile.followersModal);
-
-    for (const u of userLinks) {
-      if (u !== cleanTarget && !db.hasFollowed(u)) {
-        collectedUsers.add(u);
-      }
-    }
-
-    // Rola o modal para baixo de forma suave
-    await page.evaluate(() => {
-      const dialog = document.querySelector('div[role="dialog"]') || document.querySelector('div[data-e2e="user-followers-list"]');
-      if (dialog) {
-        const scrollable = dialog.querySelector('div[class*="UserListContainer"]') || dialog;
-        scrollable.scrollTop += 500;
-      } else {
-        window.scrollBy(0, 500);
-      }
-    });
-
-    await sleep(randomBetween(1500, 2500));
-    scrollAttempts++;
+  // Aguarda o modal aparecer
+  try {
+    await page.waitForSelector('div[data-e2e="follow-info-popup"], div[role="dialog"]', { timeout: 10000 });
+    log.success(`Lista de seguidores de @${cleanTarget} aberta com sucesso!`);
+    await sleep(2000);
+    return true;
+  } catch (err) {
+    log.warn(`Não foi possível abrir o diálogo de seguidores de @${cleanTarget}. O perfil pode ser privado ou ter restrição.`);
+    return false;
   }
-
-  log.info(`Total de novas contas encontradas para seguir: ${collectedUsers.size}`);
-
-  // Tenta fechar o modal
-  for (const sel of selectors.buttons.closeModal) {
-    try {
-      const closeBtn = await page.$(sel);
-      if (closeBtn) {
-        await closeBtn.click();
-        break;
-      }
-    } catch (e) {}
-  }
-
-  return Array.from(collectedUsers).slice(0, countLimit);
 }
 
 /**
- * Segue um usuário específico pelo perfil dele
+ * Segue um usuário diretamente pela lista do modal
  */
-async function followUser(page, username, config) {
+async function followUserInModal(page, username) {
+  const cleanUser = username.toLowerCase().replace(/^@/, '');
+
+  const result = await page.evaluate((targetUser, followTexts, followingTexts) => {
+    const popup = document.querySelector('div[data-e2e="follow-info-popup"]') || document.querySelector('div[role="dialog"]');
+    if (!popup) return { success: false, reason: 'modal_not_found' };
+
+    const container = popup.querySelector('div[class*="DivUserListContainer"]') || popup;
+    const links = Array.from(container.querySelectorAll('a[href*="/@"]'));
+
+    for (const a of links) {
+      const match = a.getAttribute('href').match(/@([a-zA-Z0-9._-]+)/);
+      if (match && match[1] && match[1].toLowerCase() === targetUser.toLowerCase()) {
+        let row = a.closest('div[class*="DivUserItem"]') || a.parentElement;
+        while (row && !row.querySelector('button') && row !== container) {
+          row = row.parentElement;
+        }
+        const btn = row ? row.querySelector('button') : null;
+        if (!btn) return { success: false, reason: 'button_not_found' };
+
+        const text = btn.innerText.trim().toLowerCase();
+        if (followingTexts.some(t => text.includes(t))) {
+          return { success: false, alreadyFollowing: true };
+        }
+
+        // Rola a linha para visualização suave
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        btn.click();
+        return { success: true };
+      }
+    }
+
+    return { success: false, reason: 'user_not_found' };
+  }, cleanUser, selectors.buttons.followTexts, selectors.buttons.followingTexts);
+
+  if (result.alreadyFollowing) {
+    log.info(`Você já segue @${cleanUser}. Registrando no histórico.`);
+    db.recordFollow(cleanUser);
+    return false;
+  }
+
+  if (result.success) {
+    await sleep(2000);
+    db.recordFollow(cleanUser);
+    log.follow(`✅ Seguiu com sucesso: @${cleanUser}`);
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Curte o vídeo mais recente de um usuário em uma aba secundária
+ */
+async function likeRecentVideoInTab(browser, username) {
+  let userTab = null;
+  try {
+    userTab = await browser.newPage();
+    await userTab.setUserAgent(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+    );
+    await userTab.goto(`https://www.tiktok.com/@${username}`, { waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {});
+    await sleep(randomBetween(2500, 3500));
+
+    let videoEl = null;
+    for (const sel of selectors.profile.videos) {
+      videoEl = await userTab.$(sel);
+      if (videoEl) break;
+    }
+
+    if (videoEl) {
+      await videoEl.click();
+      await sleep(randomBetween(2000, 3000));
+
+      for (const sel of selectors.buttons.like) {
+        const likeBtn = await userTab.$(sel);
+        if (likeBtn) {
+          await likeBtn.click();
+          log.like(`❤️ Curtiu o vídeo mais recente de @${username}`);
+          await sleep(1500);
+          break;
+        }
+      }
+    }
+  } catch (err) {
+    // Silencioso se perfil não tiver vídeos públicos
+  } finally {
+    if (userTab) {
+      await userTab.close().catch(() => {});
+    }
+  }
+}
+
+/**
+ * Segue usuário acessando o perfil diretamente (fallback caso modal não esteja disponível)
+ */
+async function followUserDirect(page, username, config) {
   const cleanUser = username.toLowerCase().replace(/^@/, '');
   log.info(`Acessando @${cleanUser}...`);
 
@@ -164,20 +199,16 @@ async function followUser(page, username, config) {
   await sleep(randomBetween(2500, 4000));
   await checkCaptcha(page);
 
-  // Procura o botão de seguir
   let buttonFound = null;
-  let buttonText = '';
-
   for (const sel of selectors.buttons.follow) {
     const buttons = await page.$$(sel);
     for (const btn of buttons) {
       const text = await page.evaluate(el => el.innerText.trim().toLowerCase(), btn);
       if (selectors.buttons.followTexts.some(t => text.includes(t))) {
         buttonFound = btn;
-        buttonText = text;
         break;
       } else if (selectors.buttons.followingTexts.some(t => text.includes(t))) {
-        log.info(`Você já segue @${cleanUser}. Registrando no histórico.`);
+        log.info(`Você já segue @${cleanUser}.`);
         db.recordFollow(cleanUser);
         return false;
       }
@@ -186,63 +217,15 @@ async function followUser(page, username, config) {
   }
 
   if (!buttonFound) {
-    log.warn(`Botão de seguir não encontrado em @${cleanUser} (pode ser conta privada ou indisponível).`);
+    log.warn(`Botão de seguir não encontrado em @${cleanUser}.`);
     return false;
   }
 
-  // Clica no botão de seguir com movimento suave
   await buttonFound.click();
   await sleep(2000);
-  await checkCaptcha(page);
-
-  // Registra no banco de dados local
   db.recordFollow(cleanUser);
   log.follow(`✅ Seguiu com sucesso: @${cleanUser}`);
-
-  // Opcional: Curte o 1º vídeo do perfil para chamar atenção (aumenta o follow-back)
-  if (config.likeRecentVideos) {
-    await sleep(randomBetween(1500, 2500));
-    await likeRecentVideo(page, cleanUser);
-  }
-
   return true;
-}
-
-/**
- * Curte o vídeo mais recente do perfil atual
- */
-async function likeRecentVideo(page, username) {
-  try {
-    let videoEl = null;
-    for (const sel of selectors.profile.videos) {
-      videoEl = await page.$(sel);
-      if (videoEl) break;
-    }
-
-    if (!videoEl) return false;
-
-    await videoEl.click();
-    await sleep(randomBetween(2500, 3500));
-    await checkCaptcha(page);
-
-    // Clica no botão de curtir se ainda não estiver curtido
-    for (const sel of selectors.buttons.like) {
-      const likeBtn = await page.$(sel);
-      if (likeBtn) {
-        await likeBtn.click();
-        log.like(`❤️ Curtiu o vídeo mais recente de @${username}`);
-        await sleep(1500);
-        break;
-      }
-    }
-
-    // Pressiona Escape para fechar o modal de visualização de vídeo
-    await page.keyboard.press('Escape');
-    await sleep(1500);
-    return true;
-  } catch (e) {
-    return false;
-  }
 }
 
 /**
@@ -293,13 +276,13 @@ async function unfollowUser(page, username) {
 }
 
 /**
- * Rotina Completa: Seguir seguidores de perfis alvo
+ * Rotina Completa: Seguir seguidores de perfis alvos
  */
-async function runFollowTargets(page, targets, config) {
+async function runFollowTargets(page, targets, config, browser) {
   log.header('INICIANDO ROTINA DE SEGUIR SEGUIDORES DE ALVOS');
-  
+
   if (!targets || targets.length === 0) {
-    log.warn('Nenhum perfil alvo informado. Adicione perfis em targets.txt ou digite um alvo.');
+    log.warn('Nenhum perfil alvo informado.');
     return;
   }
 
@@ -312,20 +295,91 @@ async function runFollowTargets(page, targets, config) {
       break;
     }
 
-    const needed = maxFollows - totalFollowedInSession;
-    const candidates = await getFollowersFromTarget(page, target, needed + 10);
+    const cleanTarget = target.toLowerCase().replace(/^@/, '');
+    const modalOpened = await openFollowersModal(page, cleanTarget);
 
-    for (const user of candidates) {
-      if (totalFollowedInSession >= maxFollows) break;
+    if (!modalOpened) {
+      log.warn(`Tentando seguir o perfil @${cleanTarget} diretamente...`);
+      const followedDirect = await followUserDirect(page, cleanTarget, config);
+      if (followedDirect) totalFollowedInSession++;
+      continue;
+    }
 
-      const followed = await followUser(page, user, config);
-      if (followed) {
-        totalFollowedInSession++;
-        log.info(`Progresso: ${totalFollowedInSession}/${maxFollows} contas seguidas.`);
-        await humanDelay(config.minDelaySeconds, config.maxDelaySeconds, 'Aguardando intervalo seguro anti-bloqueio');
-      } else {
-        await sleep(randomBetween(3000, 6000));
+    log.info('Buscando contas ativas na lista de seguidores...');
+    let scrollAttempts = 0;
+    const maxScrolls = 40;
+
+    while (totalFollowedInSession < maxFollows && scrollAttempts < maxScrolls) {
+      // Coleta usuários visíveis atualmente na lista do modal
+      const visibleUsers = await page.evaluate(() => {
+        const popup = document.querySelector('div[data-e2e="follow-info-popup"]') || document.querySelector('div[role="dialog"]');
+        if (!popup) return [];
+
+        const container = popup.querySelector('div[class*="DivUserListContainer"]') || popup;
+        const links = Array.from(container.querySelectorAll('a[href*="/@"]'));
+        const users = [];
+        const seen = new Set();
+
+        for (const a of links) {
+          const match = a.getAttribute('href').match(/@([a-zA-Z0-9._-]+)/);
+          if (match && match[1]) {
+            const u = match[1].toLowerCase();
+            if (!seen.has(u)) {
+              seen.add(u);
+              users.push(u);
+            }
+          }
+        }
+        return users;
+      });
+
+      // Filtra candidatos que ainda não foram seguidos pelo robô
+      const candidates = visibleUsers.filter(u => u !== cleanTarget && !db.hasFollowed(u));
+
+      if (candidates.length === 0) {
+        // Rola a lista para carregar mais usuários
+        await page.evaluate(() => {
+          const popup = document.querySelector('div[data-e2e="follow-info-popup"]') || document.querySelector('div[role="dialog"]');
+          if (popup) {
+            const container = popup.querySelector('div[class*="DivUserListContainer"]') || popup;
+            container.scrollTop += 600;
+          }
+        });
+        await sleep(randomBetween(1500, 2500));
+        scrollAttempts++;
+        continue;
       }
+
+      // Segue os candidatos encontrados
+      for (const candidate of candidates) {
+        if (totalFollowedInSession >= maxFollows) break;
+
+        const followed = await followUserInModal(page, candidate);
+        if (followed) {
+          totalFollowedInSession++;
+          log.info(`Progresso: ${totalFollowedInSession}/${maxFollows} contas seguidas.`);
+
+          // Opcional: Curte o vídeo mais recente em aba separada
+          if (config.likeRecentVideos && browser) {
+            await likeRecentVideoInTab(browser, candidate);
+          }
+
+          await humanDelay(config.minDelaySeconds, config.maxDelaySeconds, 'Aguardando intervalo seguro anti-bloqueio');
+        } else {
+          await sleep(1500);
+        }
+      }
+
+      // Rola a lista para continuar carregando novos perfis
+      await page.evaluate(() => {
+        const popup = document.querySelector('div[data-e2e="follow-info-popup"]') || document.querySelector('div[role="dialog"]');
+        if (popup) {
+          const container = popup.querySelector('div[class*="DivUserListContainer"]') || popup;
+          container.scrollTop += 600;
+        }
+      });
+      await sleep(2000);
+      scrollAttempts++;
     }
   }
 
@@ -364,9 +418,10 @@ async function runUnfollowRoutine(page, config) {
 
 module.exports = {
   checkCaptcha,
-  getFollowersFromTarget,
-  followUser,
-  likeRecentVideo,
+  openFollowersModal,
+  followUserInModal,
+  followUserDirect,
+  likeRecentVideoInTab,
   unfollowUser,
   runFollowTargets,
   runUnfollowRoutine
