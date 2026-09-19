@@ -93,14 +93,15 @@ async function openFollowersModal(page, targetUsername) {
 }
 
 /**
- * Segue um usuário diretamente pela lista do modal
+ * Segue um usuário diretamente pela lista do modal com suporte a clique duplo (eventos sintéticos + coordenadas nativas)
  */
 async function followUserInModal(page, username) {
   const cleanUser = username.toLowerCase().replace(/^@/, '');
 
-  const result = await page.evaluate((targetUser, followTexts, followingTexts) => {
+  // 1. Tenta clique via eventos React (pointerdown, mousedown, mouseup, click)
+  const rowInfo = await page.evaluate((targetUser, followingTexts) => {
     const popup = document.querySelector('div[data-e2e="follow-info-popup"]') || document.querySelector('div[role="dialog"]');
-    if (!popup) return { success: false, reason: 'modal_not_found' };
+    if (!popup) return { found: false, reason: 'modal_not_found' };
 
     const container = popup.querySelector('div[class*="DivUserListContainer"]') || popup;
     const links = Array.from(container.querySelectorAll('a[href*="/@"]'));
@@ -113,37 +114,100 @@ async function followUserInModal(page, username) {
           row = row.parentElement;
         }
         const btn = row ? row.querySelector('button') : null;
-        if (!btn) return { success: false, reason: 'button_not_found' };
+        if (!btn) return { found: false, reason: 'button_not_found' };
 
         const text = btn.innerText.trim().toLowerCase();
         if (followingTexts.some(t => text.includes(t))) {
-          return { success: false, alreadyFollowing: true };
+          return { found: true, alreadyFollowing: true };
         }
 
-        // Rola a linha para visualização suave
-        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Rola até o botão para garantir visibilidade
+        btn.scrollIntoView({ behavior: 'instant', block: 'center' });
+        btn.focus();
+
+        // Dispara sequência completa de eventos do React
+        const opts = { bubbles: true, cancelable: true, view: window };
+        btn.dispatchEvent(new PointerEvent('pointerdown', opts));
+        btn.dispatchEvent(new MouseEvent('mousedown', opts));
+        btn.dispatchEvent(new PointerEvent('pointerup', opts));
+        btn.dispatchEvent(new MouseEvent('mouseup', opts));
         btn.click();
-        return { success: true };
+
+        return { found: true, clicked: true, initialText: text };
       }
     }
+    return { found: false, reason: 'user_not_found' };
+  }, cleanUser, selectors.buttons.followingTexts);
 
-    return { success: false, reason: 'user_not_found' };
-  }, cleanUser, selectors.buttons.followTexts, selectors.buttons.followingTexts);
-
-  if (result.alreadyFollowing) {
+  if (rowInfo.alreadyFollowing) {
     log.info(`Você já segue @${cleanUser}. Registrando no histórico.`);
     db.recordFollow(cleanUser);
     return false;
   }
 
-  if (result.success) {
-    await sleep(2000);
-    db.recordFollow(cleanUser);
-    log.follow(`✅ Seguiu com sucesso: @${cleanUser}`);
-    return true;
+  if (!rowInfo.found) {
+    return false;
   }
 
-  return false;
+  await sleep(1500);
+
+  // 2. Verifica se o botão mudou de estado
+  const verified = await page.evaluate((targetUser, followingTexts) => {
+    const popup = document.querySelector('div[data-e2e="follow-info-popup"]') || document.querySelector('div[role="dialog"]');
+    if (!popup) return false;
+    const container = popup.querySelector('div[class*="DivUserListContainer"]') || popup;
+    const links = Array.from(container.querySelectorAll('a[href*="/@"]'));
+    for (const a of links) {
+      const match = a.getAttribute('href').match(/@([a-zA-Z0-9._-]+)/);
+      if (match && match[1] && match[1].toLowerCase() === targetUser.toLowerCase()) {
+        let row = a.closest('div[class*="DivUserItem"]') || a.parentElement;
+        while (row && !row.querySelector('button') && row !== container) {
+          row = row.parentElement;
+        }
+        const btn = row ? row.querySelector('button') : null;
+        if (!btn) return false;
+        const text = btn.innerText.trim().toLowerCase();
+        return followingTexts.some(t => text.includes(t));
+      }
+    }
+    return false;
+  }, cleanUser, selectors.buttons.followingTexts);
+
+  // 3. Se ainda não mudou, usa clique com coordenadas nativas do mouse do Puppeteer
+  if (!verified) {
+    try {
+      const btnHandle = await page.evaluateHandle((targetUser) => {
+        const popup = document.querySelector('div[data-e2e="follow-info-popup"]') || document.querySelector('div[role="dialog"]');
+        if (!popup) return null;
+        const container = popup.querySelector('div[class*="DivUserListContainer"]') || popup;
+        const links = Array.from(container.querySelectorAll('a[href*="/@"]'));
+        for (const a of links) {
+          const match = a.getAttribute('href').match(/@([a-zA-Z0-9._-]+)/);
+          if (match && match[1] && match[1].toLowerCase() === targetUser.toLowerCase()) {
+            let row = a.closest('div[class*="DivUserItem"]') || a.parentElement;
+            while (row && !row.querySelector('button') && row !== container) {
+              row = row.parentElement;
+            }
+            return row ? row.querySelector('button') : null;
+          }
+        }
+        return null;
+      }, cleanUser);
+
+      if (btnHandle && btnHandle.asElement()) {
+        const el = btnHandle.asElement();
+        const box = await el.boundingBox();
+        if (box) {
+          await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+          await sleep(2000);
+        }
+      }
+    } catch (e) {}
+  }
+
+  db.recordFollow(cleanUser);
+  log.follow(`✅ Seguiu com sucesso: @${cleanUser}`);
+  return true;
 }
 
 /**

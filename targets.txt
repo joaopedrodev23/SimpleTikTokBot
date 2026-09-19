@@ -1,7 +1,13 @@
 # Adicione aqui os perfis de referência do seu nicho no TikTok (um por linha)
-# O robô entrará nesses perfis e seguirá os seguidores deles para atrair público interessado.
-# Exemplo:
-# @cortesrapidos
-# @manualdomundo
-# @flowpdc
+# O robô entrará nesses perfis e seguirá os seguidores deles para atrair público NOVO interessado!
+#
+# DICA DE OURO: NÃO coloque seu próprio perfil aqui! 
+# Coloque perfis GRANDES do seu nicho (ex: outros canais de Bíblia, fé e motivação).
+# O robô seguirá os seguidores deles, que verão sua conta e te seguirão de volta!
 
+@palavradedeus
+@cortesbiblicos
+@pastorantoniojunior
+@trechosbiblicos
+@bibliasagrada
+@deus_e_fiel
