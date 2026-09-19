@@ -1,0 +1,11 @@
+{
+  "headless": false,
+  "minDelaySeconds": 25,
+  "maxDelaySeconds": 55,
+  "maxFollowsPerRun": 30,
+  "likeRecentVideos": true,
+  "unfollowAfterDays": 3,
+  "unfollowLimitPerRun": 30,
+  "audioNotifications": true,
+  "highContrast": true
+}

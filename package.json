@@ -1,0 +1,26 @@
+{
+  "name": "simple-tiktok-bot",
+  "version": "1.0.0",
+  "description": "Robô Open Source de Automação e Crescimento Seguro para o TikTok com foco em acessibilidade e facilidade de uso.",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "keywords": [
+    "tiktok",
+    "bot",
+    "automation",
+    "puppeteer",
+    "stealth",
+    "accessibility",
+    "open-source"
+  ],
+  "author": "João Pedro",
+  "license": "MIT",
+  "dependencies": {
+    "puppeteer": "^24.4.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+  }
+}

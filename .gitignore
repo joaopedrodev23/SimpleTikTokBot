@@ -1,0 +1,34 @@
+# Dependências
+node_modules/
+package-lock.json
+
+# Sessões, Cookies e Dados Sensíveis (PRIVACIDADE GARANTIDA)
+cookies.json
+session.json
+*.cookie
+.env
+.env.local
+
+# Perfil do Navegador / Cache do Chrome
+user_data/
+browser_profile/
+cache/
+*.log
+
+# Banco de dados local (mantém seu histórico privado na sua máquina)
+data/followed.json
+data/unfollowed.json
+data/history.json
+
+# Arquivos do Sistema Operacional
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDEs
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln

@@ -1,0 +1,6 @@
+# Adicione aqui os perfis de referência do seu nicho no TikTok (um por linha)
+# O robô entrará nesses perfis e seguirá os seguidores deles para atrair público interessado.
+# Exemplo:
+# @cortesrapidos
+# @manualdomundo
+# @flowpdc
